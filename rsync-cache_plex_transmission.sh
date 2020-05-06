@@ -18,11 +18,11 @@
 ##### No modification below this line #####
 
 # lock
-if [[ -f /var/lock/cache_torrents ]]; then
+if [[ -f /var/lock/rsync-cache_plex_transmission ]]; then
         echo "Script already running"
         exit 1
 else
-        touch /var/lock/cache_torrents
+        touch /var/lock/rsync-cache_plex_transmission
 fi
 
 ##################
@@ -86,7 +86,7 @@ rsync_cache() {
         if [[ -z $SESSION_HEADER ]];
         then
                 echo "Error: Cannot connect to transmission"
-                rm /var/lock/cache_torrents
+                rm /var/lock/rsync-cache_plex_transmission
                 exit 1
         fi
         # get torrent list
@@ -146,5 +146,5 @@ rsync_cache() {
                 rsync_cache "${STORAGE_FILE}" "${CACHE_FILE}" "${STORAGE_PATH}" "${CACHE_PATH}"
         done
 
-rm /var/lock/cache_torrents
+rm /var/lock/rsync-cache_plex_transmission
 exit 0
