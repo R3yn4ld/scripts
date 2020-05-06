@@ -3,12 +3,12 @@
 
 # settings
         #Transmission
-        RPC_USER="plex"
-        RPC_PASSWORD="pl3xpl3x"
+        RPC_USER="redacted"
+        RPC_PASSWORD="redacted"
         RPC_HOST="192.168.1.28:9091"
 
         #Plex
-        PLEX_TOKEN="eRVfis8yqFEbdT6bsd6M"
+        PLEX_TOKEN="redacted"
         PLEX_HOST="192.168.1.20:32400"
 
         #Rsync path
