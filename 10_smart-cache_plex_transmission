@@ -270,7 +270,6 @@ cleanup() {
                     RS_OPTIONS="--remove-source-files"
     # sync back cache to storage
                     rsync_transfer "${CACHE_FILE}" "${STORAGE_FILE}" "${CACHE_PATH}" "${STORAGE_PATH}" "${RS_OPTIONS}"
-                echo ""
                 fi
             done
         fi
