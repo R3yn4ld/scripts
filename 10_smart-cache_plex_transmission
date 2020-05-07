@@ -28,7 +28,8 @@
         PLEX_ENABLED=true
         PLEX_CACHE_NEXT_EPISODE=true
         PLEX_CACHE_SEASON_TILL_END=false
-        VERBOSE=false # Under construction
+        VERBOSE=true
+		DEBUG=false
 }
 ##### No modification below this line #####
 
@@ -56,57 +57,82 @@ sys_checks() {
 #######################
 rsync_transfer() {
 # get files and path
-        ORIG_FILE=$1
+        SOURCE_FILE=$1
         DEST_FILE=$2
-        ORIG_PATH=$3
+        SOURCE_PATH=$3
         DEST_PATH=$4
         RS_OPTIONS=$5
 
+if $DEBUG
+then
+	echo SOURCE_FILE $SOURCE_FILE
+	echo DEST_FILE $DEST_FILE
+	echo SOURCE_PATH $SOURCE_PATH
+	echo DEST_PATH $DEST_PATH
+	echo RS_OPTIONS $RS_OPTIONS
+fi
+
 # check if original file exist
-        if [[ ! -f "${ORIG_FILE}" ]] && [[ -f "${DEST_FILE}" ]]
+        if [[ ! -f "${SOURCE_FILE}" ]] && [[ -f "${DEST_FILE}" ]]
         then
             echo "Warning: File is on cache only"
             return
         fi
-        if [[ -f "${DEST_FILE}" ]] && [[ ${DEST_PATH} = ${CACHE_PATH} ]]
+        if [[ -f "${DEST_FILE}" ]] && [[ "${DEST_PATH}" = "${CACHE_PATH}" ]]
         then
 			$VERBOSE && echo "File already cached"
             return
         fi
+        if [[ "${DEST_FILE}" == "${DEST_PATH}" ]] || [[ "${SOURCE_PATH}" = "${SOURCE_PATH}" ]]
+        then
+			
+			echo "Cannot sync root path!"
+            return
+        fi
+
 
 # get dir
-        ORIG_DIR=$(dirname "${ORIG_FILE}")
+        SOURCE_DIR=$(dirname "${SOURCE_FILE}")
         DEST_DIR=$(dirname "${DEST_FILE}")
 
 # sync file
         mkdir -p "${DEST_DIR}"
-        rsync -avhq --info=progress2 "${ORIG_FILE}" "${DEST_FILE}"
+		$VERBOSE && echo "Sync ${SOURCE_FILE} to ${DEST_FILE}"
+        rsync -avhq --info=progress2 "${SOURCE_FILE}" "${DEST_FILE}"
         RSYNC_RESULT=$?
 
 # sync hardlinks
-        hardlink_transfer "${ORIG_FILE}" "${DEST_FILE}" "${ORIG_PATH}" "${DEST_PATH}" "${RS_OPTIONS}"
+        hardlink_transfer "${SOURCE_FILE}" "${DEST_FILE}" "${SOURCE_PATH}" "${DEST_PATH}" "${RS_OPTIONS}"
 
 # remove original file if requested
         if [[ "${RS_OPTIONS}" = "--remove-source-files" ]]
         then
-            echo "Delete ${ORIG_FILE}"
-            rm "${ORIG_FILE}"
+            $VERBOSE && echo "Delete ${SOURCE_FILE}"
+            rm "${SOURCE_FILE}"
         fi
 }
 hardlink_transfer() {
 # get files and path
-        ORIG_FILE=$1
+        SOURCE_FILE=$1
         DEST_FILE=$2
-        ORIG_PATH=$3
+        SOURCE_PATH=$3
         DEST_PATH=$4
         RS_OPTIONS=$5
+if $DEBUG
+then
+	echo SOURCE_FILE $SOURCE_FILE
+	echo DEST_FILE $DEST_FILE
+	echo SOURCE_PATH $SOURCE_PATH
+	echo DEST_PATH $DEST_PATH
+	echo RS_OPTIONS $RS_OPTIONS
+fi
 
 # get hardlinks from source
-        find "${ORIG_PATH}" -samefile "${ORIG_FILE}" | while read ORIG_LINK
+        find "${SOURCE_PATH}" -samefile "${SOURCE_FILE}" | while read SOURCE_LINK
         do
-                if [[ ! "${ORIG_FILE}" = "${ORIG_LINK}" ]];
+                if [[ ! "${SOURCE_FILE}" = "${SOURCE_LINK}" ]];
                 then
-                        DEST_LINK=$(echo ${ORIG_LINK} | sed "s|`echo ${ORIG_PATH}`|`echo ${DEST_PATH}`|")
+                        DEST_LINK=$(echo ${SOURCE_LINK} | sed "s|`echo ${SOURCE_PATH}`|`echo ${DEST_PATH}`|")
                         # if DEST is not a hardlink
                         if [[ -f "${DEST_LINK}" ]] && [[ ! `stat -c %h "${DEST_LINK}"` -gt 1 ]]
                         then
@@ -129,8 +155,8 @@ hardlink_transfer() {
 # remove hardlinks from source
                         if [[ "${RS_OPTIONS}" = "--remove-source-files" ]]
                         then
-                            $VERBOSE && echo "Delete hardlink ${ORIG_LINK}"
-                            rm "${ORIG_LINK}"
+                            $VERBOSE && echo "Delete hardlink ${SOURCE_LINK}"
+                            rm "${SOURCE_LINK}"
                         fi
 
                 fi
@@ -218,17 +244,23 @@ plex_cache() {
                     PARENT_NB_EPISODES=$(curl --silent http://${PLEX_HOST}/library/metadata/$PARENT_ID | xmllint --xpath 'string(//MediaContainer/Directory/@leafCount)' -)
                     TITLE="${GRANDPARENTTITLE} Season ${SEASON} - Episode ${EPISODE}/${PARENT_NB_EPISODES}: $TITLE"
 # update nb file to cache
-                    NB_FILES=1
-                    $PLEX_CACHE_NEXT_EPISODE && NB_FILES=2
-                    $PLEX_CACHE_SEASON_TILL_END && NB_FILES=$(( $PARENT_NB_EPISODES - $EPISODE + 1 ))
+					START_FILE=$EPISODE
+                    $PLEX_CACHE_NEXT_EPISODE && NB_FILES=$(( $EPISODE + 1))
+                    $PLEX_CACHE_SEASON_TILL_END && NB_FILES=$(( $PARENT_NB_EPISODES ))
                 else
-                    NB_FILES=1
+                    START_FILE=1
+					NB_FILES=1
                 fi
                 echo "$i/$NB_SESSIONS: $TITLE"
-                for j in `seq $NB_FILES`
+                for j in `seq $START_FILE $NB_FILES`
                 do
 # get file path
-                    PLEX_FILE=$(curl --silent http://${PLEX_HOST}/library/metadata/$ID | xmllint --xpath 'string(//MediaContainer/Video/Media/Part/@file)' -)
+                if [[ $TYPE = "episode" ]]				
+				then
+					PLEX_FILE=$(curl --silent http://${PLEX_HOST}/library/metadata/$ID | xmllint --xpath 'string(//MediaContainer/Video/Media/Part/@file)' -)
+                else
+					PLEX_FILE=$(curl --silent http://${PLEX_HOST}/library/metadata/$ID | xmllint --xpath 'string(//MediaContainer/Video/Media/Part/@file)' -)
+				fi
                     FILE_TO_CACHE=$(echo ${PLEX_FILE} | sed 's|\"\"|\/|g' | sed 's|\"||g' | sed 's|\/data\/||')
                     echo "Caching file $j/$NB_FILES: $FILE_TO_CACHE"
                     STORAGE_FILE="${STORAGE_PATH}${FILE_TO_CACHE}"
@@ -293,3 +325,4 @@ $PLEX_ENABLED && plex_cache
 
 rm /var/lock/rsync-cache_plex_transmission
 exit 0
+
