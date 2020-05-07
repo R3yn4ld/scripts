@@ -1,34 +1,4 @@
-#!/bin/bash
-# This script gets actives torrents list from Transmission, playing sessions from Plex,  and tells rsync to copy them from array to cache drive.
-# It also cleans oldest modified files by rsyncing them back to array (in case of modification).
-# Hardlink are preserved
-#
-# By Reynald - 06 may 2020 - mailto:reynald.rollet@gmail.com
-# v.0.5.7
-
-# settings
-{
-        #Transmission
-        RPC_USER="your RPC/WebGUI username"
-        RPC_PASSWORD="your RPC/WebGUI passowrd"
-        RPC_HOST="192.168.1.28:9091"
-
-        #Plex
-        PLEX_TOKEN="see_here: https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/"
-        PLEX_HOST="192.168.1.20:32400"
-
-        #Rsync path
-        STORAGE_PATH="/mnt/user0/data/"
-        CACHE_PATH="/mnt/cache/data/"
-        CACHE_DISK="/dev/mapper/nvme0n1p1"
-        CACHE_MIN_FREE_SPACE_PCT="90"
-        
-        #Options (set to true or false)
-        TRANSMISSION_ENABLED=true
-        PLEX_ENABLED=true
-        PLEX_CACHE_NEXT_EPISODE=true
-        PLEX_CACHE_SEASON_TILL_END=false
-        VERBOSE=true
+        VERBOSE=false
 		DEBUG=false
 }
 ##### No modification below this line #####
@@ -83,7 +53,7 @@ fi
 			$VERBOSE && echo "File already cached"
             return
         fi
-        if [[ "${DEST_FILE}" == "${DEST_PATH}" ]] || [[ "${SOURCE_PATH}" = "${SOURCE_PATH}" ]]
+        if [[ "${DEST_FILE}" = "${DEST_PATH}" ]] || [[ "${SOURCE_FILE}" = "${SOURCE_PATH}" ]]
         then
 			
 			echo "Cannot sync root path!"
@@ -257,7 +227,7 @@ plex_cache() {
 # get file path
                 if [[ $TYPE = "episode" ]]				
 				then
-					PLEX_FILE=$(curl --silent http://${PLEX_HOST}/library/metadata/$ID | xmllint --xpath 'string(//MediaContainer/Video/Media/Part/@file)' -)
+					PLEX_FILE=$(curl --silent http://${PLEX_HOST}/library/metadata/$PARENT_ID/children | xmllint --xpath 'string(//MediaContainer/Video['$j']/Media/Part/@file)' -)
                 else
 					PLEX_FILE=$(curl --silent http://${PLEX_HOST}/library/metadata/$ID | xmllint --xpath 'string(//MediaContainer/Video/Media/Part/@file)' -)
 				fi
