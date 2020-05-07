@@ -39,6 +39,7 @@ sys_checks() {
                 exit 1
         else
                 touch /var/lock/rsync-cache_plex_transmission
+				echo "Welcome to $0"
         fi
 
 # check that path are mounted
@@ -64,11 +65,12 @@ rsync_transfer() {
 # check if original file exist
         if [[ ! -f "${ORIG_FILE}" ]] && [[ -f "${DEST_FILE}" ]]
         then
-            echo "File is on cache only"
+            echo "Warning: File is on cache only"
             return
         fi
         if [[ -f "${DEST_FILE}" ]] && [[ ${DEST_PATH} = ${CACHE_PATH} ]]
         then
+			$VERBOSE && echo "File already cached"
             return
         fi
 
@@ -146,7 +148,6 @@ transmission_cache() {
         if [[ -z $SESSION_HEADER ]];
         then
                 echo "Error: Cannot connect to transmission"
-                rm /var/lock/rsync-cache_plex_transmission
                 return 1
         fi
         # get torrent list
@@ -191,8 +192,7 @@ plex_cache() {
         STATUS_SESSIONS=$(curl --silent http://${PLEX_HOST}/status/sessions -H "X-Plex-Token: $PLEX_TOKEN")
         if [[ -z $STATUS_SESSIONS ]];
         then
-                echo "Error: Cannot connect to pelx"
-                rm /var/lock/rsync-cache_plex_transmission
+                echo "Error: Cannot connect to plex"
                 return 1
         fi
 
@@ -249,28 +249,30 @@ cleanup() {
         echo "---------------"
         echo "Cleaning cache:"
         echo "---------------"
-# get free space and oldest files
+# get free space
         a=$(df -h | grep $CACHE_DISK | awk '{ printf "%d", $5 }')
         b=$CACHE_MIN_FREE_SPACE_PCT
         if [[ "$a" -ge "$b" ]];
         then
             echo "$a% space used, quota is $b%, cleaning:"
             echo "Scanning files..."
+# get oldest files
             find "${CACHE_PATH}" -type f -printf "%T@ %p\n" | sort -n | sed "s|`echo ${CACHE_PATH}`|%|g" | cut -d'%' -f2 | while read FILE_TO_CLEAN
             do
-    # get free space
+# loop start: get free space again
                 a=$(df -h | grep $CACHE_DISK | awk '{ printf "%d", $5 }')
                 b=$CACHE_MIN_FREE_SPACE_PCT
-    # if free space not enough
+# if free space not enough
                 if [[ "$a" -ge "$b" ]];
                 then
                     echo "$a% space used, quota is $b%, uncaching $FILE_TO_CLEAN"
                     STORAGE_FILE="${STORAGE_PATH}${FILE_TO_CLEAN}"
                     CACHE_FILE="${CACHE_PATH}${FILE_TO_CLEAN}"
                     RS_OPTIONS="--remove-source-files"
-    # sync back cache to storage
+# sync back cache to storage
                     rsync_transfer "${CACHE_FILE}" "${STORAGE_FILE}" "${CACHE_PATH}" "${STORAGE_PATH}" "${RS_OPTIONS}"
                 fi
+# loop 
             done
         fi
         a=$(df -h | grep $CACHE_DISK | awk '{ printf "%d", $5 }')
@@ -291,4 +293,3 @@ $PLEX_ENABLED && plex_cache
 
 rm /var/lock/rsync-cache_plex_transmission
 exit 0
-
