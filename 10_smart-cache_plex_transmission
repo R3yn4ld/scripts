@@ -67,7 +67,7 @@ rsync_transfer() {
             echo "File is on cache only"
             return
         fi
-        if [[ -f "${DEST_FILE}" ]]
+        if [[ -f "${DEST_FILE}" ]] && [[ ${DEST_PATH} = ${CACHE_PATH} ]]
         then
             return
         fi
