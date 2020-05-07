@@ -259,7 +259,7 @@ cleanup() {
             echo "$a% space used, quota is $b%, cleaning:"
             echo "Scanning files..."
 # get oldest files
-            find "${CACHE_PATH}" -type f -printf "%T@ %p\n" | sort -n | sed "s|`echo ${CACHE_PATH}`|%|g" | cut -d'%' -f2 | while read FILE_TO_CLEAN
+            find "${CACHE_PATH}" -type f -printf "%C@ %p\n" | sort -n | sed "s|`echo ${CACHE_PATH}`|%|g" | cut -d'%' -f2 | while read FILE_TO_CLEAN
             do
 # loop start: get free space again
                 a=$(df -h | grep $CACHE_DISK | awk '{ printf "%d", $5 }')
