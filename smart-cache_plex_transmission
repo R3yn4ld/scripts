@@ -1,3 +1,36 @@
+#!/bin/bash
+# This script gets actives torrents list from Transmission, playing sessions from Plex,  and tells rsync to copy them from array to cache drive.
+# It also cleans oldest modified files by rsyncing them back to array (in case of modification).
+# Hardlink are preserved
+#
+# By Reynald - 06 may 2020 - mailto:reynald.rollet@gmail.com
+# v.0.5.8a
+
+# settings
+{
+        #Transmission
+        RPC_USER="redacted"
+        RPC_PASSWORD="redacted"
+        RPC_HOST="192.168.1.28:9091"
+
+        #Plex
+        PLEX_TOKEN="redacted"
+        PLEX_HOST="192.168.1.20:32400"
+
+        #Rsync path
+        STORAGE_PATH="/mnt/user0/data/"
+        CACHE_PATH="/mnt/cache/data/"
+        CACHE_DISK="/dev/mapper/nvme0n1p1"
+        CACHE_MIN_FREE_SPACE_PCT="90"
+        
+	#Log max size
+	LOG_MAX_SIZE=30000000
+		
+        #Options (set to true or false)
+        TRANSMISSION_ENABLED=true
+        PLEX_ENABLED=true
+        PLEX_CACHE_NEXT_EPISODE=true
+        PLEX_CACHE_SEASON_TILL_END=true
         VERBOSE=false
 		DEBUG=false
 }
@@ -10,7 +43,7 @@ sys_checks() {
                 exit 1
         else
                 touch /var/lock/rsync-cache_plex_transmission
-				echo "Welcome to $0"
+				$VERBOSE && echo "Welcome to $0"
         fi
 
 # check that path are mounted
@@ -20,6 +53,15 @@ sys_checks() {
                 rm /var/lock/rsync-cache_plex_transmission
                 exit 1
         fi
+return
+# cut log
+		LOG_FILE=$(echo $0 | sed '|\/script|\/log.txt|')
+		if [[ $(stat -c %s $LOG_FILE) -ge $LOG_MAX_SIZE ]]
+		then
+			$VERBOSE && echo "Emptying log file"
+			echo "" > $LOG_FILE
+		fi
+		
 }
 
 #######################
@@ -43,7 +85,7 @@ then
 fi
 
 # check if original file exist
-        if [[ ! -f "${SOURCE_FILE}" ]] && [[ -f "${DEST_FILE}" ]]
+        if [[ ! -f "${SOURCE_FILE}" ]] && [[ "${DEST_PATH}" = "${CACHE_PATH}" ]] && [[ -f "${DEST_FILE}" ]]
         then
             echo "Warning: File is on cache only"
             return
@@ -202,44 +244,64 @@ plex_cache() {
         do
 # get title
                 ID=$(echo $STATUS_SESSIONS  | xmllint --xpath 'string(//MediaContainer/Video['$i']/@ratingKey)' -)
-                TITLE=$(echo $STATUS_SESSIONS  | xmllint --xpath 'string(//MediaContainer/Video['$i']/@title)' -)
                 TYPE=$(echo $STATUS_SESSIONS  | xmllint --xpath 'string(//MediaContainer/Video['$i']/@type)' -)
 # eventually get serie info
                 if [[ $TYPE = "episode" ]]
                 then
+					TYPE="Serie"
                     GRANDPARENTTITLE=$(echo $STATUS_SESSIONS  | xmllint --xpath 'string(//MediaContainer/Video['$i']/@grandparentTitle)' -)
                     SEASON=$(echo $STATUS_SESSIONS  | xmllint --xpath 'string(//MediaContainer/Video['$i']/@parentIndex)' -)
+					TITLE=$(echo $STATUS_SESSIONS  | xmllint --xpath 'string(//MediaContainer/Video['$i']/@title)' -)
                     EPISODE=$(echo $STATUS_SESSIONS  | xmllint --xpath 'string(//MediaContainer/Video['$i']/@index)' -)
                     PARENT_ID=$(echo $STATUS_SESSIONS  | xmllint --xpath 'string(//MediaContainer/Video['$i']/@parentRatingKey)' -)
                     PARENT_NB_EPISODES=$(curl --silent http://${PLEX_HOST}/library/metadata/$PARENT_ID | xmllint --xpath 'string(//MediaContainer/Directory/@leafCount)' -)
-                    TITLE="${GRANDPARENTTITLE} Season ${SEASON} - Episode ${EPISODE}/${PARENT_NB_EPISODES}: $TITLE"
+                    TITLE="$TYPE: ${GRANDPARENTTITLE} Season ${SEASON} - Episode ${EPISODE}/${PARENT_NB_EPISODES}: $TITLE"
 # update nb file to cache
 					START_FILE=$EPISODE
                     $PLEX_CACHE_NEXT_EPISODE && NB_FILES=$(( $EPISODE + 1))
                     $PLEX_CACHE_SEASON_TILL_END && NB_FILES=$(( $PARENT_NB_EPISODES ))
-                else
+				elif [[ $TYPE = "movie" ]]
+				then
+					TYPE="Movie"
+					TITLE=$(echo $STATUS_SESSIONS  | xmllint --xpath 'string(//MediaContainer/Video['$i']/@title)' -)
+                    TITLE="$TYPE: $TITLE"					
                     START_FILE=1
 					NB_FILES=1
+                else
+					# GRANDPARENTTITLE=$(echo $STATUS_SESSIONS  | xmllint --xpath 'string(//MediaContainer/Track['$i']/@grandparentTitle)' -)
+					# PARENTTITLE=$(echo $STATUS_SESSIONS  | xmllint --xpath 'string(//MediaContainer/Track['$i']/@parentTitle)' -)
+					# TITLE=$(echo $STATUS_SESSIONS  | xmllint --xpath 'string(//MediaContainer/Track['$i']/@title)' -)                    
+                    # TITLE="$TYPE: ${GRANDPARENTTITLE}: ${PARENTTITLE} - ${TITLE}"
+					TYPE="Audio"
+					TITLE="track caching not implemented"
+                    TITLE="$TYPE: $TITLE"					
+                    START_FILE=0
+					NB_FILES=0
                 fi
                 echo "$i/$NB_SESSIONS: $TITLE"
                 for j in `seq $START_FILE $NB_FILES`
                 do
 # get file path
-                if [[ $TYPE = "episode" ]]				
-				then
-					PLEX_FILE=$(curl --silent http://${PLEX_HOST}/library/metadata/$PARENT_ID/children | xmllint --xpath 'string(//MediaContainer/Video['$j']/Media/Part/@file)' -)
-                else
-					PLEX_FILE=$(curl --silent http://${PLEX_HOST}/library/metadata/$ID | xmllint --xpath 'string(//MediaContainer/Video/Media/Part/@file)' -)
-				fi
-                    FILE_TO_CACHE=$(echo ${PLEX_FILE} | sed 's|\"\"|\/|g' | sed 's|\"||g' | sed 's|\/data\/||')
-                    echo "Caching file $j/$NB_FILES: $FILE_TO_CACHE"
-                    STORAGE_FILE="${STORAGE_PATH}${FILE_TO_CACHE}"
-                    CACHE_FILE="${CACHE_PATH}${FILE_TO_CACHE}"
+					if [[ $TYPE = "Audio" ]]
+					then
+						echo "Skipping"
+					else
+						if [[ $TYPE = "Serie" ]]				
+						then
+							PLEX_FILE=$(curl --silent http://${PLEX_HOST}/library/metadata/$PARENT_ID/children | xmllint --xpath 'string(//MediaContainer/Video['$j']/Media/Part/@file)' -)
+						else
+							PLEX_FILE=$(curl --silent http://${PLEX_HOST}/library/metadata/$ID | xmllint --xpath 'string(//MediaContainer/Video/Media/Part/@file)' -)
+						fi					
+						FILE_TO_CACHE=$(echo ${PLEX_FILE} | sed 's|\"\"|\/|g' | sed 's|\"||g' | sed 's|\/data\/||')
+						echo "Caching file $j/$NB_FILES: $FILE_TO_CACHE"
+						STORAGE_FILE="${STORAGE_PATH}${FILE_TO_CACHE}"
+						CACHE_FILE="${CACHE_PATH}${FILE_TO_CACHE}"
 # and send to rsync
-                    RS_OPTIONS=""
-                    rsync_transfer "${STORAGE_FILE}" "${CACHE_FILE}" "${STORAGE_PATH}" "${CACHE_PATH}" "${RS_OPTIONS}"
-                    ID=$(( $ID + 1 ))
-                done
+						RS_OPTIONS=""
+						rsync_transfer "${STORAGE_FILE}" "${CACHE_FILE}" "${STORAGE_PATH}" "${CACHE_PATH}" "${RS_OPTIONS}"
+						ID=$(( $ID + 1 ))
+					fi
+				done
                 echo ""
         done
 }
@@ -258,7 +320,7 @@ cleanup() {
         then
             echo "$a% space used, quota is $b%, cleaning:"
             echo "Scanning files..."
-# get oldest files
+# get oldest accessed files
             find "${CACHE_PATH}" -type f -printf "%C@ %p\n" | sort -n | sed "s|`echo ${CACHE_PATH}`|%|g" | cut -d'%' -f2 | while read FILE_TO_CLEAN
             do
 # loop start: get free space again
