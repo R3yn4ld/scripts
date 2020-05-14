@@ -135,7 +135,7 @@ rsync_transfer() {
         mkdir -p "${DEST_DIR}"
         [[ $VERBOSE -ge 1 ]] && echo " --- Info: Syncing ${SOURCE_FILE}"
         [[ $VERBOSE -ge 2 ]] && echo " --- Info: Syncing ${SOURCE_FILE} to ${DEST_FILE}"
-        rsync -avhq "${SOURCE_FILE}" "${DEST_FILE}"
+        rsync -aHq "${SOURCE_FILE}" "${DEST_FILE}"
 		if [[ ! $? -eq 0 ]] 
 		then
 			echo " --- Error: cannot rsync ${SOURCE_FILE}"
