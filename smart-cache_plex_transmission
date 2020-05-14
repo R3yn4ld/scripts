@@ -4,7 +4,7 @@
 # Hardlink are preserved
 #
 # By Reynald - 06 may 2020 - mailto:reynald.rollet@gmail.com
-# v.0.5.11
+# v.0.5.14
 
 # settings
 {
@@ -24,9 +24,10 @@
         CACHE_PATH="/mnt/cache/data/"
         CACHE_DISK="/dev/mapper/nvme0n1p1"
         CACHE_MIN_FREE_SPACE_PCT="90"
+        CACHE_MAX_FREE_SPACE_PCT="85"
         
         #Parameters
-        LOG_MAX_SIZE=30000000
+        LOG_MAX_SIZE=5000000
         NOISY_HOUR_START=9
         NOISY_HOUR_STOP=21
         
@@ -35,37 +36,39 @@
         PLEX_ENABLED=true
         PLEX_CACHE_NEXT_EPISODE=true
         PLEX_CACHE_SEASON_TILL_END=true
-        VERBOSE=false
-        DEBUG=false
+        VERBOSE=1 #0=Error; 1=Info; 2=More_Info; 3=Debug
 }
 ##### No modification below this line #####
 
 sys_checks() {
 # lock
-        if [[ -f /var/lock/sma ]]; then
+        if [[ -f /var/lock/smart-cache_plex_transmission ]]
+		then
                 echo "Error: Script already running"
                 exit 1
         else
-                touch /var/lock/smart-cache_plex_ttransmission
-                $VERBOSE && echo "Welcome to $0"
+                touch /var/lock/smart-cache_plex_transmission
+                [[ $VERBOSE -ge 2 ]] && echo "Welcome to $0"
         fi
 
 # check that path are mounted
         if [[ ! -d $STORAGE_PATH ]] || [[ ! -d $CACHE_PATH ]];
         then
                 echo "Error: Paths are not accessibles"
-                rm /var/lock/smart-cache_plex_ttransmission
+                rm /var/lock/smart-cache_plex_transmission
                 exit 1
         fi
-return
+
 # cut log
-        LOG_FILE=$(echo $0 | sed '|\/script|\/log.txt|')
-        if [[ $(stat -c %s $LOG_FILE) -ge $LOG_MAX_SIZE ]]
+        LOG_FILE=$(echo $0 | sed 's|\/script|\/log.txt|')
+		LOG_SIZE=$(stat -c %s $LOG_FILE)
+		[[ $VERBOSE -ge 1 ]] && echo "Info: Log size is $LOG_SIZE"
+        if [[ $LOG_SIZE -ge $LOG_MAX_SIZE ]]
         then
-            $VERBOSE && echo "Info: Emptying log file"
+            [[ $VERBOSE -ge 1 ]] && echo "Info: Emptying log file"
             echo "" > $LOG_FILE
-        fi
-        
+        fi        
+		[[ $VERBOSE -ge 1 ]] && echo ""
 }
 
 #######################
@@ -73,7 +76,7 @@ return
 #######################
 noisy_hours() {
 # return 0 if time in noisy hour range
-    if [[ $(date +%H) -ge $NOISY_HOUR_START ]] && [[ $(date +%H) -le $NOISY_HOUR_STOP ]]
+    if [[ $(date '+%-H') -ge $NOISY_HOUR_START ]] && [[ $(date +%-H) -le $NOISY_HOUR_STOP ]]
     then
         return 0
     else
@@ -87,39 +90,39 @@ rsync_transfer() {
 	SOURCE_PATH=$3
 	DEST_PATH=$4
 	RS_OPTIONS=$5
-	$DEBUG && echo " -- Debug:Rsync_transfer function parameters:"
-    $DEBUG && echo " --- Debug: Source file: $SOURCE_FILE"
-    $DEBUG && echo " --- Debug: Dest.  file: $DEST_FILE"
-    $DEBUG && echo " --- Debug: Source path: $SOURCE_PATH"
-    $DEBUG && echo " --- Debug: Dest.  path: $DEST_PATH"
-    $DEBUG && echo " --- Debug: Options    : $RS_OPTIONS"
+	[[ $VERBOSE -ge 3 ]] && echo " --- Debug:Rsync_transfer function parameters:"
+    [[ $VERBOSE -ge 3 ]] && echo " ---- Debug: Source file: $SOURCE_FILE"
+    [[ $VERBOSE -ge 3 ]] && echo " ---- Debug: Dest.  file: $DEST_FILE"
+    [[ $VERBOSE -ge 3 ]] && echo " ---- Debug: Source path: $SOURCE_PATH"
+    [[ $VERBOSE -ge 3 ]] && echo " ---- Debug: Dest.  path: $DEST_PATH"
+    [[ $VERBOSE -ge 3 ]] && echo " ---- Debug: Options    : $RS_OPTIONS"
 
 # check if original file exist
         if [[ ! -f "${SOURCE_FILE}" ]] && [[ ! -f "${DEST_FILE}" ]]
         then
-            echo " -- Error: Files:"
-			echo "${SOURCE_FILE}"
-			echo "${DEST_FILE}"
-			echo "does not exist"
+            echo " --- Error: Files:"
+			echo " ${SOURCE_FILE}"
+			echo " ${DEST_FILE}"
+			echo " does not exist"
             return 1
         elif [[ "${DEST_FILE}" = "${DEST_PATH}" ]] || [[ "${SOURCE_FILE}" = "${SOURCE_PATH}" ]]
         then
             
-            echo " -- Error: Cannot sync root path!"
+            echo " --- Error: Cannot sync root path!"
             return 1
         elif [[ ! -f "${SOURCE_FILE}" ]] && [[ "${DEST_PATH}" = "${CACHE_PATH}" ]] && [[ -f "${DEST_FILE}" ]]
         then
             if noisy_hours
             then
-                $VERBOSE && echo " -- Info: File is on cache only. Inside noisy hours, sending to storage"
+                [[ $VERBOSE -ge 2 ]] && echo " -- Info: File is on cache only. Inside noisy hours, sending to storage"
                 rsync_transfer "${DEST_FILE}" "${SOURCE_FILE}" "${DEST_PATH}" "${SOURCE_PATH}"
             else
-                echo " -- Warning: File is on cache only. Outside of noisy hours, doing nothing"
+                [[ $VERBOSE -ge 2 ]] && echo " --- Warning: File is on cache only. Outside of noisy hours, doing nothing"
             fi
             return
         elif [[ -f "${DEST_FILE}" ]] && [[ "${DEST_PATH}" = "${CACHE_PATH}" ]]
         then
-            $VERBOSE && echo " -- Info: File already cached"
+            [[ $VERBOSE -ge 2 ]] && echo " --- Info: File already cached"
             return
         fi
 
@@ -130,17 +133,22 @@ rsync_transfer() {
 
 # sync file
         mkdir -p "${DEST_DIR}"
-        $VERBOSE && echo " -- Info: Syncing ${SOURCE_FILE} to ${DEST_FILE}"
+        [[ $VERBOSE -ge 1 ]] && echo " --- Info: Syncing ${SOURCE_FILE}"
+        [[ $VERBOSE -ge 2 ]] && echo " --- Info: Syncing ${SOURCE_FILE} to ${DEST_FILE}"
         rsync -avhq "${SOURCE_FILE}" "${DEST_FILE}"
-        RSYNC_RESULT=$?
-
+		if [[ ! $? -eq 0 ]] 
+		then
+			echo " --- Error: cannot rsync ${SOURCE_FILE}"
+			echo " to ${DEST_FILE}"
+			return 1
+		fi
 # sync hardlinks
         hardlink_transfer "${SOURCE_FILE}" "${DEST_FILE}" "${SOURCE_PATH}" "${DEST_PATH}" "${RS_OPTIONS}"
 
 # remove original file if requested
-        if [[ "${RS_OPTIONS}" = " --remove-source-files" ]]
+        if [[ "${RS_OPTIONS}" = "--remove-source-files" ]] && $RSYNC_RESULT
         then
-            $VERBOSE && echo " -- Info: Delete ${SOURCE_FILE}"
+            [[ $VERBOSE -ge 2 ]] && echo " --- Info: Delete ${SOURCE_FILE}"
             rm "${SOURCE_FILE}"
         fi
 }
@@ -152,12 +160,12 @@ hardlink_transfer() {
 	DEST_PATH=$4
 	RS_OPTIONS=$5
 	
-	$DEBUG && echo " -- Debug: Hardlink_transfer function parameters:"
-    $DEBUG && echo " --- Debug: Source file: $SOURCE_FILE"
-    $DEBUG && echo " --- Debug: Dest.  file: $DEST_FILE"
-    $DEBUG && echo " --- Debug: Source path: $SOURCE_PATH"
-    $DEBUG && echo " --- Debug: Dest.  path: $DEST_PATH"
-    $DEBUG && echo " --- Debug: Options    : $RS_OPTIONS"
+	[[ $VERBOSE -ge 3 ]] && echo " -- Debug: Hardlink_transfer function parameters:"
+    [[ $VERBOSE -ge 3 ]] && echo " --- Debug: Source file: $SOURCE_FILE"
+    [[ $VERBOSE -ge 3 ]] && echo " --- Debug: Dest.  file: $DEST_FILE"
+    [[ $VERBOSE -ge 3 ]] && echo " --- Debug: Source path: $SOURCE_PATH"
+    [[ $VERBOSE -ge 3 ]] && echo " --- Debug: Dest.  path: $DEST_PATH"
+    [[ $VERBOSE -ge 3 ]] && echo " --- Debug: Options    : $RS_OPTIONS"
 
 
 # get hardlinks from source
@@ -169,7 +177,7 @@ hardlink_transfer() {
                         # if DEST is not a hardlink
                         if [[ -f "${DEST_LINK}" ]] && [[ ! `stat -c %h "${DEST_LINK}"` -gt 1 ]]
                         then
-                            $VERBOSE && echo " -- Info: Creating hardlink: ${DEST_LINK}"
+                            [[ $VERBOSE -ge 2 ]] && echo " --- Info: Creating hardlink: ${DEST_LINK}"
                             # rm destination file if exist
                             [[ -f "${DEST_LINK}" ]] && rm "${DEST_LINK}"
                             DEST_LINK_DIR=$(dirname "${DEST_LINK}")
@@ -178,17 +186,17 @@ hardlink_transfer() {
                             ln "${DEST_FILE}" "${DEST_LINK}"
                             if [[ ! $? -eq 0 ]] 
                             then
-                                echo " -- Error: cannot hardlink ${DEST_FILE}"
-                                echo "to ${DEST_LINK}"
+                                echo " --- Error: cannot hardlink ${DEST_FILE}"
+                                echo " to ${DEST_LINK}"
                                 return 1
                             fi
                         else
-                            $VERBOSE && echo " -- Info: Hardlink exists"
+                            [[ $VERBOSE -ge 2 ]] && echo " --- Info: Hardlink exists"
                         fi
 # remove hardlinks from source
-                        if [[ "${RS_OPTIONS}" = " --remove-source-files" ]]
+                        if [[ "${RS_OPTIONS}" = "--remove-source-files" ]]
                         then
-                            $VERBOSE && echo " -- Info: Delete hardlink ${SOURCE_LINK}"
+                            [[ $VERBOSE -ge 2 ]] && echo " --- Info: Delete hardlink ${SOURCE_LINK}"
                             rm "${SOURCE_LINK}"
                         fi
 
@@ -215,9 +223,9 @@ transmission_cache() {
            | jq '.arguments.torrents|=sort_by(-.activityDate)')
         NB_TORRENTS=$(echo ${TORRENT_LIST} | jq '.arguments.torrents | length')
 
-        echo " -----------------------"
+        echo "-----------------------"
         echo "$NB_TORRENTS active(s) torrent(s):"
-        echo " -----------------------"
+        echo "-----------------------"
 # for each torrent
         if [[ $NB_TORRENTS -gt $RPC_MAX_CACHED_SESSIONS ]]
         then
@@ -235,16 +243,16 @@ transmission_cache() {
 				if [[ $TORRENT_STATUS == 4 ]]
 				then
 					echo " - $i/$NB_TORRENTS: $TORRENT_NAME (downloading)"
-					$VERBOSE && echo " - Info: Doing nothing"
+					[[ $VERBOSE -ge 1 ]] && echo " - Info: Doing nothing"
 				else
-					echo " $i/$NB_TORRENTS: ${TORRENT_NAME} (seeding)"
+					echo " - $i/$NB_TORRENTS: ${TORRENT_NAME} (seeding)"
         # for each file not downloading
 					for j in `seq $NB_FILES`
 					do
 # get each file path
 							TORRENT_FILE=$(echo ${TORRENT_LIST} | jq '.arguments.torrents['$(($i - 1))'].files['$(($j - 1))'].name' | sed 's|\"||g')
 							FILE_TO_CACHE=$(echo ${TORRENT_PATH}/${TORRENT_FILE} | sed 's|\"\"|\/|g' | sed 's|\"||g' | sed 's|data\/||g')
-							$VERBOSE && echo " - Info: File $j/$NB_FILES: ${TORRENT_FILE}"
+							[[ $VERBOSE -ge 2 ]] && echo " -- Info: File $j/$NB_FILES: ${TORRENT_FILE}"
 							STORAGE_FILE="${STORAGE_PATH}${FILE_TO_CACHE}"
 							CACHE_FILE="${CACHE_PATH}${FILE_TO_CACHE}"
 # and send to rsync
@@ -253,7 +261,7 @@ transmission_cache() {
 				fi
         done
 		# [[ $NB_TORRENTS != 0 ]] && echo ""
-		$VERBOSE && echo ""
+		[[ $VERBOSE -ge 1 ]] && echo ""
 }
 
 ########
@@ -269,9 +277,9 @@ plex_cache() {
         fi
 
         NB_SESSIONS=$(echo $STATUS_SESSIONS  | xmllint --xpath 'string(//MediaContainer/@size)' -)
-        echo " ----------------------------"
+        echo "----------------------------"
         echo "$NB_SESSIONS active(s) plex session(s):"
-        echo " ----------------------------"
+        echo "----------------------------"
 
 # for each session
         if [[ $NB_SESSIONS -gt $PLEX_MAX_CACHED_SESSIONS ]]
@@ -319,7 +327,7 @@ plex_cache() {
                     START_FILE=0
                     NB_FILES=0
                 fi
-                echo " $i/$NB_SESSIONS: $TITLE"
+                echo " - $i/$NB_SESSIONS: $TITLE"
 
                 # if [[ $NB_FILES -gt $PLEX_MAX_CACHED_SESSIONS ]]
                 # then
@@ -332,7 +340,7 @@ plex_cache() {
 # get file path
                     if [[ $TYPE = "Audio" ]]
                     then
-                        $VERBOSE echo " - Info: Skipping"
+                        [[ $VERBOSE -ge 2 ]] && echo " -- Info: Skipping"
                     else
                         if [[ $TYPE = "Serie" ]]                
                         then
@@ -341,7 +349,7 @@ plex_cache() {
                             PLEX_FILE=$(curl --silent http://${PLEX_HOST}/library/metadata/$ID | xmllint --xpath 'string(//MediaContainer/Video/Media/Part/@file)' -)
                         fi                    
                         FILE_TO_CACHE=$(echo ${PLEX_FILE} | sed 's|\"\"|\/|g' | sed 's|\"||g' | sed 's|\/data\/||')
-                        $VERBOSE && echo " - Info: File $j/$NB_FILES: $FILE_TO_CACHE"
+                        [[ $VERBOSE -ge 2 ]] && echo " -- Info: File $j/$NB_FILES: $FILE_TO_CACHE"
                         STORAGE_FILE="${STORAGE_PATH}${FILE_TO_CACHE}"
                         CACHE_FILE="${CACHE_PATH}${FILE_TO_CACHE}"
 # and send to rsync
@@ -351,7 +359,7 @@ plex_cache() {
                 done
         done
 		# [[ $NB_SESSIONS != 0 ]] && echo ""
-		$VERBOSE && echo ""
+		[[ $VERBOSE -ge 1 ]] && echo ""
 }
 
 ####################
@@ -362,40 +370,40 @@ cleanup() {
         a=$(df -h | grep $CACHE_DISK | awk '{ printf "%d", $5 }')
         b=$CACHE_MIN_FREE_SPACE_PCT
 
-        echo " ---------------------"
+        echo "---------------------"
         echo "Cache disk usage: ${a}%"
-        echo " ---------------------"
+        echo "---------------------"
 
 
         if [[ "$a" -ge "$b" ]];
         then
             echo "$a% space used, quota is $b%, cleaning"
-            $VERBOSE && echo "Info: Scanning files..."
+            [[ $VERBOSE -ge 1 ]] && echo "Info: Scanning files..."
 # get oldest accessed files
             find "${CACHE_PATH}" -type f -printf "%C@ %p\n" | sort -n | sed "s|`echo ${CACHE_PATH}`|%|g" | cut -d'%' -f2 | while read FILE_TO_CLEAN
             do
 # loop start: get free space again
                 a=$(df -h | grep $CACHE_DISK | awk '{ printf "%d", $5 }')
-                b=$CACHE_MIN_FREE_SPACE_PCT
+                b=$CACHE_MAX_FREE_SPACE_PCT
 # if free space not enough
                 if [[ "$a" -ge "$b" ]];
                 then
-                    $VERBOSE && echo " - Info: $a% space used, quota is $b%, uncaching $FILE_TO_CLEAN"
+                    [[ $VERBOSE -ge 1 ]] && echo " - Info: $a% space used, target $b%, uncaching $FILE_TO_CLEAN"
                     STORAGE_FILE="${STORAGE_PATH}${FILE_TO_CLEAN}"
                     CACHE_FILE="${CACHE_PATH}${FILE_TO_CLEAN}"
 # sync back cache to storage
-                    rsync_transfer "${CACHE_FILE}" "${STORAGE_FILE}" "${CACHE_PATH}" "${STORAGE_PATH}" " --remove-source-files"
+                    rsync_transfer "${CACHE_FILE}" "${STORAGE_FILE}" "${CACHE_PATH}" "${STORAGE_PATH}" "--remove-source-files"
                 fi
 # loop 
             done
         fi
         a=$(df -h | grep $CACHE_DISK | awk '{ printf "%d", $5 }')
         b=$CACHE_MIN_FREE_SPACE_PCT
-        $VERBOSE && echo "Info: $a% space used, quota is $b%, nothing to do"
+        [[ $VERBOSE -ge 1 ]] && echo " - Info: $a% space used, quota is $b%, nothing to do"
 # prune empty directories from source dir
-        $VERBOSE && echo "Info: Cleaning empty directories..."
+        [[ $VERBOSE -ge 2 ]] && echo " -- Info: Cleaning empty directories..."
         find "${CACHE_PATH}" -type d -not -path '*/\.*' -empty -prune -exec rmdir --ignore-fail-on-non-empty {} \;
-        $VERBOSE && echo ""
+        [[ $VERBOSE -ge 1 ]] && echo ""
 }
 
 sys_checks
@@ -404,6 +412,6 @@ $PLEX_ENABLED && plex_cache
 cleanup
 echo ""
 
-rm /var/lock/smart-cache_plex_ttransmission
+rm /var/lock/smart-cache_plex_transmission
 exit 0
 
