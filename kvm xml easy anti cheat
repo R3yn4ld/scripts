@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <domain type='kvm'>
   <name>Windows 11</name>
-  <uuid>4ba06b21-0eca-36f2-124f-b1765fb563a3</uuid>
+  <uuid>ee86d923-c142-dd75-f418-c87f5452416c</uuid>
   <metadata>
     <vmtemplate xmlns="unraid" name="Windows 11" icon="windows11.png" os="windowstpm"/>
   </metadata>
