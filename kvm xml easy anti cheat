@@ -39,32 +39,31 @@
     <vcpupin vcpu='22' cpuset='13'/>
     <vcpupin vcpu='23' cpuset='29'/>
   </cputune>
+  <sysinfo type='smbios'>
+    <bios>
+      <entry name='vendor'>American Megatrends Inc.</entry>
+      <entry name='version'>1414</entry>
+      <entry name='date'>04/27/2023</entry>
+    </bios>
+    <system>
+      <entry name='manufacturer'>ASUSTeK COMPUTER INC.</entry>
+      <entry name='product'>PRIME X670-P</entry>
+      <entry name='version'>1.xx</entry>
+      <entry name='serial'>221112301000048</entry>
+      <entry name='uuid'>ee86d923-c142-dd75-f418-c87f5452416c</entry>
+      <entry name='sku'>SKU</entry>
+      <entry name='family'>To be filled by O.E.M.</entry>
+    </system>
+  </sysinfo>
   <os>
     <type arch='x86_64' machine='pc-q35-7.2'>hvm</type>
     <loader readonly='yes' type='pflash'>/usr/share/qemu/ovmf-x64/OVMF_CODE-pure-efi-tpm.fd</loader>
     <nvram>/etc/libvirt/qemu/nvram/4ba06b21-0eca-36f2-124f-b1765fb563a3_VARS-pure-efi-tpm.fd</nvram>
     <smbios mode='host'/>
   </os>
-  <sysinfo type="smbios">
-    <bios>
-      <entry name="vendor">American Megatrends Inc.</entry>
-      <entry name="version">1414</entry>
-      <entry name="date">04/27/2023</entry>
-    </bios>
-    <system>
-      <entry name="manufacturer">ASUSTeK COMPUTER INC.</entry>
-      <entry name="product">PRIME X670-P</entry>
-      <entry name="version">1.xx</entry>
-      <entry name="serial">221112301000048</entry>
-      <entry name="uuid">ee86d923-c142-dd75-f418-c87f5452416c</entry>
-      <entry name="sku">SKU</entry>
-      <entry name="family">To be filled by O.E.M.</entry>
-    </system>
-  </sysinfo>
   <features>
     <acpi/>
     <apic/>
-    <ioapic driver='kvm'/>
     <hyperv mode='passthrough'>
       <relaxed state='on'/>
       <vapic state='on'/>
@@ -74,6 +73,7 @@
     <kvm>
       <hidden state='on'/>
     </kvm>
+    <ioapic driver='kvm'/>
   </features>
   <cpu mode='host-passthrough' check='none' migratable='on'>
     <topology sockets='1' dies='1' cores='12' threads='2'/>
@@ -155,7 +155,7 @@
         <cache mode='always'/>
         <sandbox mode='chroot'/>
       </binary>
-      <source dir='/mnt/user/games'/>
+      <source dir='/mnt/media/games'/>
       <target dir='games'/>
       <address type='pci' domain='0x0000' bus='0x01' slot='0x00' function='0x0'/>
     </filesystem>
@@ -165,7 +165,7 @@
         <cache mode='always'/>
         <sandbox mode='chroot'/>
       </binary>
-      <source dir='/mnt/user/_downloads'/>
+      <source dir='/mnt/media/_downloads'/>
       <target dir='_downloads'/>
       <address type='pci' domain='0x0000' bus='0x02' slot='0x00' function='0x0'/>
     </filesystem>
